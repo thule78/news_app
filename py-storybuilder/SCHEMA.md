@@ -138,18 +138,41 @@ style):
    }
    ```
 
-4. **CLI approval gate** (no LLM call — local): show every proposed fact / proposed
-   new character / ending suggestion from steps 1–3, one at a time, approve/reject.
-   Approved items get merged into `story.json` (new characters get `status: "active"`
-   once approved, and so on); rejected items are dropped. Then the paragraph itself
-   is appended to the current chapter file — paragraph write-back is not gated the
-   same way as facts (only the *derived facts* need approval, not the prose itself,
-   per CONTEXT.md).
+4. **DetectLocations** → strict JSON, same shape as DetectCharacters, over the new
+   paragraph text:
+   ```jsonc
+   { "locations": [ { "name": "The Lighthouse", "is_new": false } ] }
+   ```
+   `is_new: true` = name not found in `story.json` locations registry. No precedent
+   in AISB (their location extraction only ran once, at manuscript-import time) —
+   this and step 5 are our addition, built symmetric to the character path by
+   deliberate choice (2026-07-19), not ported from AISB source.
 
-Locations don't currently have a `DetectLocationAttributes` equivalent confirmed from
-AISB's source (only `LocationDescription` the model was seen, not the detection
-service that populates it) — leaving location-fact growth out of the loop for now
-unless you want it added; flag if so.
+5. **DetectLocationAttributes** → strict JSON, scoped to whatever DetectLocations
+   returned:
+   ```jsonc
+   {
+     "locations": [
+       {
+         "name": "The Lighthouse",
+         "is_new": false,
+         "descriptions": [ "..." ]
+       }
+     ]
+   }
+   ```
+   No `description_type` field here — AISB's `LocationDescription` model has no
+   sub-type equivalent to the character background's 5 types, just a plain
+   description string per timeline. Keep that asymmetry; don't invent categories
+   AISB doesn't have.
+
+6. **CLI approval gate** (no LLM call — local): show every proposed fact / proposed
+   new character / proposed new location / ending suggestion from steps 1–5, one at a
+   time, approve/reject. Approved items get merged into `story.json` (new
+   characters/locations get `status: "active"` once approved, and so on); rejected
+   items are dropped. Then the paragraph itself is appended to the current chapter
+   file — paragraph write-back is not gated the same way as facts (only the *derived
+   facts* need approval, not the prose itself, per CONTEXT.md).
 
 ## Module layout
 
@@ -160,10 +183,10 @@ storybuilder/
   config.py           # .env loading, ANTHROPIC_API_KEY
   models.py           # dataclasses: Story, Chapter, Paragraph, Character, Location, Timeline
   storage.py           # load/save story.json + chapters/<n>.json, path helpers
-  prompts.py           # WriteParagraph / DetectCharacters / DetectCharacterAttributes templates
+  prompts.py           # WriteParagraph / DetectCharacters / DetectCharacterAttributes / DetectLocations / DetectLocationAttributes templates
   llm.py               # Anthropic client wrapper, strict-JSON call + retry (AISB's CallLlmWithRetry equivalent)
   timeline_summary.py  # deterministic non-LLM summary (ported from AISB, word-capped)
-  growth.py            # orchestrates the 4-step per-paragraph sequence, merges approved items into story.json
+  growth.py            # orchestrates the 6-step per-paragraph sequence, merges approved items into story.json
   approval.py          # interactive CLI approve/reject prompts
   export.py            # story.json + ALL chapters -> one combined book document
 ```
@@ -178,11 +201,18 @@ storybuilder/
   refs) — not per-chapter output. Prints to **stdout** only; user copies it manually
   (e.g. into a blog) — no file write, no auto-publish integration.
 
+## Resolved
+
+- Ending-signal placement (folded into WriteParagraph) and new-character handling
+  (`is_new` flag) — confirmed as designed above.
+- Location facts grow with **full symmetry** to characters (decided 2026-07-19):
+  DetectLocations + DetectLocationAttributes added as steps 4–5 of the growth loop,
+  same approval gate, same new-location (`is_new`) path as new characters. This has
+  no AISB precedent (their location extraction is import-time only) — it's a
+  deliberate departure, not a port.
+- Module layout and CLI commands — drafted above.
+
 ## Open before coding starts
 
-- Confirm or adjust the two assumptions above (ending-signal placement, new-character
-  handling via `is_new` flag on DetectCharacters/DetectCharacterAttributes rather than
-  AISB's separate detection-mode parameter).
-- Decide whether location facts grow the same way (currently deferred, no
-  DetectLocationAttributes designed yet).
-- Module layout for the CLI itself (commands, package structure) — not yet drafted.
+Nothing outstanding. Design is considered complete for v1; next step is
+implementation (user codes it, per CONTEXT.md).
