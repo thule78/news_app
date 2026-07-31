@@ -7,6 +7,7 @@ from typing import Sequence
 
 from aa_content.config import load_openai_config
 from aa_content.errors import StageExecutionError, UserFacingError
+from aa_content.processing_workflow import process_itinerary
 from aa_content.trip_workflow import create_trip, inspect_trip
 from aa_content.workspace import initialize_workspace
 
@@ -38,6 +39,16 @@ def build_parser() -> argparse.ArgumentParser:
         "show", help="Inspect persisted Trip and workflow state."
     )
     show_parser.add_argument("--trip-id", required=True, help="Stable Trip ID.")
+    process_parser = trip_commands.add_parser(
+        "process",
+        help="Sanitize and normalize the current Itinerary Revision.",
+    )
+    process_parser.add_argument("--trip-id", required=True, help="Stable Trip ID.")
+    process_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Regenerate sanitized and normalized revision artifacts.",
+    )
 
     config_parser = commands.add_parser("config", help="Validate local configuration.")
     config_commands = config_parser.add_subparsers(
@@ -80,6 +91,29 @@ def main(arguments: Sequence[str] | None = None) -> int:
             print(f"Current Itinerary Revision: r{result.revision_number}")
             print(f"Trip Creation: {result.creation_status}")
             print(f"Source: {result.source_path.as_posix()}")
+            return 0
+
+        if options.command == "trip" and options.trip_command == "process":
+            result = process_itinerary(
+                options.workspace,
+                options.trip_id,
+                force=options.force,
+            )
+            removal_label = (
+                "removal" if result.finding_count == 1 else "removals"
+            )
+            print(f"Itinerary {result.outcome}: {result.name}")
+            print(f"Trip ID: {result.trip_id}")
+            print(f"Itinerary Revision: r{result.revision_number}")
+            print(
+                f"Supplier Data: {result.sanitization_status} "
+                f"({result.finding_count} {removal_label})"
+            )
+            print(
+                f"Missing Information: {result.missing_information_count}"
+            )
+            print(f"Fact Conflicts: {result.fact_conflict_count}")
+            print(f"Export: {'BLOCKED' if result.export_blocked else 'READY'}")
             return 0
 
         if options.command == "config" and options.config_command == "check-openai":
